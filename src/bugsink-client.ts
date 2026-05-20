@@ -570,23 +570,68 @@ export class BugsinkClient {
   // ============================================================================
 
   /**
-   * Get event stacktrace as pre-rendered Markdown
+   * Get event stacktrace as Markdown.
+   *
+   * The Bugsink `/stacktrace/` endpoint returns HTTP 500 due to a server-side
+   * Python bug (`'dict' object has no attribute 'encode'`). This method works
+   * around that by fetching the full event and building the stacktrace from the
+   * event's exception data. If the API ever starts returning `stacktrace_md`
+   * on the event object, that is used directly instead.
    */
   async getEventStacktrace(eventId: string): Promise<string> {
-    const url = `${this.baseUrl}/api/canonical/0/events/${eventId}/stacktrace/`;
+    const event = await this.getEvent(eventId);
 
-    const response = await fetch(url, {
-      headers: {
-        'Authorization': `Bearer ${this.apiToken}`,
-      },
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Bugsink API error (${response.status}): ${errorText}`);
+    // Use pre-rendered markdown if the API provides it
+    if (event.stacktrace_md) {
+      return event.stacktrace_md;
     }
 
-    return response.text();
+    // Build markdown stacktrace from event exception data
+    const lines: string[] = [];
+
+    if (event.data?.exception?.values?.length) {
+      for (const exc of event.data.exception.values) {
+        lines.push(`## ${exc.type}: ${exc.value}`);
+        lines.push('');
+
+        if (exc.stacktrace?.frames?.length) {
+          lines.push('### Traceback (most recent call last)');
+          lines.push('');
+
+          for (const frame of exc.stacktrace.frames) {
+            const loc = frame.lineno ? `:${frame.lineno}` : '';
+            const appTag = frame.in_app === false ? ' *(library)*' : '';
+            lines.push(`**\`${frame.filename}${loc}\`** in \`${frame.function}\`${appTag}`);
+
+            const hasContext =
+              (frame.pre_context?.length ?? 0) > 0 ||
+              frame.context_line !== undefined ||
+              (frame.post_context?.length ?? 0) > 0;
+
+            if (hasContext) {
+              lines.push('```');
+              if (frame.pre_context) {
+                lines.push(...frame.pre_context);
+              }
+              if (frame.context_line !== undefined) {
+                lines.push(`→ ${frame.context_line}`);
+              }
+              if (frame.post_context) {
+                lines.push(...frame.post_context);
+              }
+              lines.push('```');
+            }
+            lines.push('');
+          }
+        }
+      }
+    } else if (event.data?.message) {
+      lines.push(`## ${event.data.message}`);
+    } else {
+      return 'No stacktrace available for this event.';
+    }
+
+    return lines.join('\n');
   }
 
   // ============================================================================

@@ -282,7 +282,7 @@ server.tool(
       try {
         stacktraceMd = await client.getEventStacktrace(latestEvent.id);
       } catch {
-        // Stacktrace endpoint may be unavailable; fall back to structured frames
+        // Stacktrace unavailable; formatted frames from get_event still shown below
       }
 
       output += `\n### Latest Event\n${formatEvent(latestEvent, true)}`;
@@ -527,9 +527,9 @@ server.tool(
 // Get Event Stacktrace (Markdown)
 server.tool(
   "get_stacktrace",
-  "Get an event's stacktrace as pre-rendered Markdown. More readable than raw frame data.",
+  "Get an event's stacktrace as Markdown. Uses the Bugsink-internal event ID (the `id` field from list_events, not `event_id`).",
   {
-    event_id: z.string().describe("The event ID (UUID) to get stacktrace for"),
+    event_id: z.string().describe("The event ID (UUID) to get stacktrace for — use the `id` field from list_events"),
   },
   async ({ event_id }) => {
     const markdown = await client.getEventStacktrace(event_id);
