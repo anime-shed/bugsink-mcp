@@ -697,7 +697,10 @@ async function startHttpServer(port: number): Promise<void> {
 }
 
 async function main() {
-  const httpPort = process.env.MCP_HTTP_PORT;
+  // Cloud Run (and most container platforms) inject PORT and expect the app to
+  // listen on it; MCP_HTTP_PORT is an explicit override. Either enables HTTP
+  // mode. With neither set, fall back to stdio (local Claude/Cursor usage).
+  const httpPort = process.env.MCP_HTTP_PORT || process.env.PORT;
   if (httpPort) {
     await startHttpServer(Number(httpPort));
     return;
