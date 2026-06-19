@@ -167,6 +167,7 @@ server.tool(
   {
     cursor: z.string().optional().describe("Pagination cursor from a previous response's 'Next cursor' or 'Previous cursor'"),
   },
+  { readOnlyHint: true },
   async ({ cursor }) => {
     const response = await client.listProjects({ cursor });
 
@@ -193,6 +194,7 @@ server.tool(
   {
     cursor: z.string().optional().describe("Pagination cursor from a previous response's 'Next cursor' or 'Previous cursor'"),
   },
+  { readOnlyHint: true },
   async ({ cursor }) => {
     const response = await client.listTeams({ cursor });
 
@@ -224,6 +226,7 @@ server.tool(
     order: z.enum(['asc', 'desc']).optional().describe("Sort order: 'asc' or 'desc' (default: desc)"),
     cursor: z.string().optional().describe("Pagination cursor from a previous response's 'Next cursor' or 'Previous cursor'"),
   },
+  { readOnlyHint: true },
   async ({ project_id, status, limit, sort, order, cursor }) => {
     const response = await client.listIssues(project_id, { status, limit, sort, order, cursor });
 
@@ -248,6 +251,7 @@ server.tool(
   {
     issue_id: z.string().describe("The issue ID (UUID) to retrieve"),
   },
+  { readOnlyHint: true },
   async ({ issue_id }) => {
     const issue = await client.getIssue(issue_id);
 
@@ -318,6 +322,7 @@ server.tool(
     limit: z.number().optional().default(10).describe("Maximum number of events to return (default: 10)"),
     cursor: z.string().optional().describe("Pagination cursor from a previous response's 'Next cursor' or 'Previous cursor'"),
   },
+  { readOnlyHint: true },
   async ({ issue_id, limit, cursor }) => {
     const response = await client.listEvents(issue_id, { limit, cursor });
 
@@ -342,6 +347,7 @@ server.tool(
   {
     event_id: z.string().describe("The event ID (UUID) to retrieve"),
   },
+  { readOnlyHint: true },
   async ({ event_id }) => {
     const event = await client.getEvent(event_id);
 
@@ -370,6 +376,7 @@ server.tool(
   "test_connection",
   "Test the connection to the Bugsink instance",
   {},
+  { readOnlyHint: true },
   async () => {
     const result = await client.testConnection();
 
@@ -391,6 +398,7 @@ server.tool(
   {
     project_id: z.number().describe("The project ID to retrieve"),
   },
+  { readOnlyHint: true },
   async ({ project_id }) => {
     const project = await client.getProject(project_id);
 
@@ -431,6 +439,7 @@ server.tool(
     alert_on_regression: z.boolean().optional().default(true).describe("Send alerts for regressions"),
     alert_on_unmute: z.boolean().optional().default(true).describe("Send alerts when issues are unmuted"),
   },
+  { destructiveHint: true },
   async ({ team_id, name, visibility, alert_on_new_issue, alert_on_regression, alert_on_unmute }) => {
     const project = await client.createProject({
       team: team_id,
@@ -463,6 +472,7 @@ server.tool(
     alert_on_unmute: z.boolean().optional().describe("Send alerts when issues are unmuted"),
     retention_max_event_count: z.number().optional().describe("Maximum events to retain"),
   },
+  { destructiveHint: true },
   async ({ project_id, ...updates }) => {
     // Filter out undefined values
     const input = Object.fromEntries(
@@ -488,6 +498,7 @@ server.tool(
     name: z.string().describe("The team name"),
     visibility: z.enum(['joinable', 'discoverable', 'hidden']).optional().default('discoverable').describe("Team visibility"),
   },
+  { destructiveHint: true },
   async ({ name, visibility }) => {
     const team = await client.createTeam({ name, visibility });
 
@@ -509,6 +520,7 @@ server.tool(
     name: z.string().optional().describe("New team name"),
     visibility: z.enum(['joinable', 'discoverable', 'hidden']).optional().describe("Team visibility"),
   },
+  { destructiveHint: true },
   async ({ team_id, name, visibility }) => {
     const input = Object.fromEntries(
       Object.entries({ name, visibility }).filter(([_, v]) => v !== undefined)
@@ -536,6 +548,7 @@ server.tool(
   {
     event_id: z.string().describe("The event ID (UUID) to get stacktrace for — use the `id` field from list_events"),
   },
+  { readOnlyHint: true },
   async ({ event_id }) => {
     const markdown = await client.getEventStacktrace(event_id);
 
@@ -557,6 +570,7 @@ server.tool(
     project_id: z.number().describe("The project ID to list releases for"),
     cursor: z.string().optional().describe("Pagination cursor from a previous response's 'Next cursor' or 'Previous cursor'"),
   },
+  { readOnlyHint: true },
   async ({ project_id, cursor }) => {
     const response = await client.listReleases(project_id, { cursor });
 
@@ -583,6 +597,7 @@ server.tool(
   {
     release_id: z.string().describe("The release ID (UUID) to retrieve"),
   },
+  { readOnlyHint: true },
   async ({ release_id }) => {
     const release = await client.getRelease(release_id);
 
@@ -610,6 +625,7 @@ server.tool(
     version: z.string().describe("The release version string (e.g., '1.0.0', 'v2.3.1')"),
     timestamp: z.string().optional().describe("Release timestamp (ISO 8601 format). Defaults to now."),
   },
+  { destructiveHint: true },
   async ({ project_id, version, timestamp }) => {
     const release = await client.createRelease({
       project: project_id,
