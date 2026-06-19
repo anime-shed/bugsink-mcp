@@ -12,6 +12,8 @@
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import http from "node:http";
 import { z } from "zod";
 import { BugsinkClient, type Issue, type Event, type Release } from "./bugsink-client.js";
 
@@ -36,7 +38,10 @@ const client = new BugsinkClient({
   apiToken: BUGSINK_TOKEN,
 });
 
-// Initialize MCP server
+// Build a fully-configured MCP server. A fresh instance is created per HTTP
+// request (the stateless transport cannot serve sequential requests on one
+// instance) and once for stdio. Helpers/tools below are registered on it.
+function createServer(): McpServer {
 const server = new McpServer({
   name: "bugsink-mcp",
   version: "0.2.0",
@@ -621,16 +626,89 @@ server.tool(
   }
 );
 
+  return server;
+}
+
 // ============================================================================
 // Server Startup
 // ============================================================================
 
+/**
+ * Serve over Streamable HTTP (stateless JSON mode) so a remote MCP client — e.g.
+ * the Trellios governed proxy — can reach this server over the network. Enabled
+ * by MCP_HTTP_PORT; optional MCP_HTTP_AUTH_TOKEN requires a matching
+ * `Authorization: Bearer <token>` on every request. A fresh server + transport
+ * is created per request (stateless transports do not reuse across requests).
+ */
+async function startHttpServer(port: number): Promise<void> {
+  const authToken = process.env.MCP_HTTP_AUTH_TOKEN;
+
+  const httpServer = http.createServer(async (req, res) => {
+    if (authToken) {
+      const presented = (req.headers["authorization"] || "").replace(/^Bearer\s+/i, "");
+      if (presented !== authToken) {
+        res.writeHead(401, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "unauthorized" }));
+        return;
+      }
+    }
+    if (req.method !== "POST") {
+      res.writeHead(405, { "Content-Type": "application/json", Allow: "POST" });
+      res.end(JSON.stringify({ error: "method_not_allowed" }));
+      return;
+    }
+
+    let body = "";
+    for await (const chunk of req) body += chunk;
+    let parsed: unknown;
+    try {
+      parsed = body ? JSON.parse(body) : undefined;
+    } catch {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "invalid_json" }));
+      return;
+    }
+
+    const server = createServer();
+    const transport = new StreamableHTTPServerTransport({
+      sessionIdGenerator: undefined,
+      enableJsonResponse: true,
+    });
+    res.on("close", () => {
+      void transport.close();
+      void server.close();
+    });
+    try {
+      await server.connect(transport);
+      await transport.handleRequest(req, res, parsed);
+    } catch (error) {
+      console.error("HTTP request handling failed:", error);
+      if (!res.headersSent) {
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "internal_error" }));
+      }
+    }
+  });
+
+  httpServer.listen(port, () => {
+    console.error(`Bugsink MCP server started (streamable-http) on port ${port}`);
+    console.error(`Connected to: ${BUGSINK_URL}`);
+  });
+}
+
 async function main() {
+  const httpPort = process.env.MCP_HTTP_PORT;
+  if (httpPort) {
+    await startHttpServer(Number(httpPort));
+    return;
+  }
+
+  const server = createServer();
   const transport = new StdioServerTransport();
   await server.connect(transport);
 
   // Log to stderr to avoid interfering with MCP protocol on stdout
-  console.error("Bugsink MCP server started");
+  console.error("Bugsink MCP server started (stdio)");
   console.error(`Connected to: ${BUGSINK_URL}`);
 }
 
