@@ -329,6 +329,19 @@ This server is designed for [Bugsink](https://www.bugsink.com/), a self-hosted e
 
 MIT
 
+## Contributors
+
+The original version of this server lives upstream at [`j-shelfwood/bugsink-mcp`](https://github.com/j-shelfwood/bugsink-mcp.git). This curated fork incorporates enhancements cherry-picked from [`razzaque/bugsink-mcp`](https://github.com/razzaque/bugsink-mcp.git) and ships them on top of j-shelfwood's base. Thanks to everyone who has contributed code, ideas, or reviews.
+
+| Contributor | Role | Highlights |
+|-------------|------|------------|
+| [Joris Schelfhout](https://github.com/j-shelfwood) (`joris@shelfwood.co`) | Original author | Initial release, mutation tools, API coverage (`v0.1.0` → `v0.2.0`) |
+| [jacobfrantz1](https://github.com/jacobfrantz1) | Pagination contributor | Filter-signature-aware cursors, spill cap raised to 5, ID disambiguation |
+| [Brian Razzaque](https://github.com/razzaque) (`razzaque@gmail.com`) | Transports + UX | Streamable-HTTP transport, Cloud Run–ready container, MCP tool annotations (`readOnlyHint` / `destructiveHint`), stacktrace workaround |
+| [Animesh](https://github.com/anime-shed) (`animesh@flick2know.com`) | Fork maintainer | Curated integration of upstream enhancements, documentation |
+
+If you'd like to be listed here, open a PR — link it in the description and it'll be added on merge.
+
 ## Contributing
 
 Contributions welcome! Please open an issue or PR on [GitHub](https://github.com/anime-shed/bugsink-mcp).
