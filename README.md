@@ -62,86 +62,190 @@ Or through the Bugsink web UI under Settings > API Tokens.
 
 ## Transports
 
-The server picks a transport at startup based on environment variables. There is no separate command-line flag.
+The server automatically supports multiple transports based on environment variables and connection protocols. There is no separate command-line flag needed.
 
-### stdio (default)
+### 1. stdio (default)
 
 When neither `MCP_HTTP_PORT` nor `PORT` is set, the server reads MCP JSON-RPC from stdin and writes responses to stdout. This is the mode used by Claude Desktop, Cursor, Claude Code, and most local MCP clients — they spawn the server as a subprocess.
 
-### Streamable-HTTP (stateless)
+```bash
+# Run with Node.js
+node dist/index.js
 
-Set `MCP_HTTP_PORT` (or `PORT`) and the server binds a plain Node `http` listener. Each request gets a fresh server + `StreamableHTTPServerTransport` pair (`enableJsonResponse: true`), so the server is fully stateless and safe behind a load balancer or in a Cloud Run service.
+# Or run with Bun
+bun dist/index.js
+```
 
-Clients must send `Accept: application/json, text/event-stream` and `Content-Type: application/json`. A `POST` is required for every MCP request; other methods return `405`. A fresh body parser accepts one JSON object per request.
+### 2. Streamable-HTTP (MCP Standard POST `/mcp` & `/`)
 
-If `MCP_HTTP_AUTH_TOKEN` is set, every request must include `Authorization: Bearer <token>` matching the environment value. The token is compared verbatim; mismatched/missing headers return `401 unauthorized`. Use this when fronting the server with an MCP gateway you trust to handle user authentication.
+Set `PORT=8080` (or `MCP_HTTP_PORT=8080`). The server binds an HTTP listener supporting the latest MCP Streamable HTTP specification. Each request is processed with `StreamableHTTPServerTransport` with `enableJsonResponse: true`, making it fully stateless and safe behind load balancers, reverse proxies, and Kubernetes ingress controllers.
 
-### Container (Cloud Run / any OCI runtime)
+- **Endpoint**: `POST /mcp` (or `POST /`)
+- **Required Headers**: `Content-Type: application/json`, `Accept: application/json, text/event-stream`
+
+### 3. WebSockets (Full-Duplex Real-Time `/ws` & `/`)
+
+For real-time streaming, interactive tools, and bidirectional push, the HTTP server accepts WebSocket connections on `/ws` (and root `/` upgrade).
+
+- **WebSocket URL**: `ws://<host>:<port>/ws` (or `wss://<host>/ws` over HTTPS)
+- **Subprotocol / Auth**: Provide `Authorization: Bearer <token>`, `Sec-WebSocket-Protocol: <token>`, or `?token=<token>` when `MCP_HTTP_AUTH_TOKEN` is enabled.
+
+### 4. Server-Sent Events (SSE `/sse` & `/messages`)
+
+For streaming responses and compatibility with classic MCP SSE clients:
+
+- **Connect Stream**: `GET /sse` (returns `event: endpoint` with `/messages?sessionId=<id>`)
+- **Send Messages**: `POST /messages?sessionId=<id>`
+
+### 5. Healthcheck Probes (`/healthz`, `/health`, `/livez`)
+
+Built-in HTTP GET health endpoints return `200 OK` with JSON service metadata:
 
 ```bash
-docker build -t bugsink-mcp .
+curl http://localhost:8080/healthz
+# {"status":"ok","service":"bugsink-mcp","version":"0.4.0","transports":["streamable-http","sse","websocket","stdio"],"bugsink_url":"..."}
+```
+Essential for Kubernetes liveness/readiness probes and Docker container healthchecks.
+
+---
+
+## Remote HTTPS & WSS Client Configuration
+
+Once deployed behind an HTTPS reverse proxy or Kubernetes ingress (such as `mcp-bugsink.fieldassist.io`), configure your MCP clients using HTTPS and secure WebSockets (`wss://`).
+
+### Streamable HTTP / SSE Client Config (e.g. Claude Desktop / Cursor)
+
+```json
+{
+  "mcpServers": {
+    "bugsink-remote": {
+      "url": "https://mcp-bugsink.fieldassist.io/mcp",
+      "headers": {
+        "Authorization": "Bearer YOUR_MCP_HTTP_AUTH_TOKEN"
+      }
+    }
+  }
+}
+```
+
+### WebSocket Client Config
+
+```json
+{
+  "mcpServers": {
+    "bugsink-ws": {
+      "url": "wss://mcp-bugsink.fieldassist.io/ws",
+      "headers": {
+        "Authorization": "Bearer YOUR_MCP_HTTP_AUTH_TOKEN"
+      }
+    }
+  }
+}
+```
+
+---
+
+## Deployment in Kubernetes (`fa-common` Cluster, `mcp` Namespace)
+
+The server is designed for deployment in the **`fa-common`** Azure Kubernetes (AKS) cluster inside the **`mcp`** namespace, connecting directly to Bugsink running in the same cluster via internal Kubernetes DNS.
+
+### Architecture in `fa-common`
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                        fa-common AKS Cluster                           │
+│                                                                        │
+│   [ Namespace: mcp ]                                                   │
+│   mcp-bugsink.fieldassist.io (HTTPS / WSS via cert-manager TLS)        │
+│       │                                                                │
+│       ▼                                                                │
+│   Ingress (nginx) ────► Service (mcp-bugsink:8080)                     │
+│                             │                                          │
+│                             ▼                                          │
+│                       Pod (mcp-bugsink)                                │
+│                             │                                          │
+│                             │ (In-Cluster Internal Networking)         │
+│                             ▼                                          │
+│   [ Namespace: bugsink ]                                               │
+│   http://bugsink-service.bugsink.svc.cluster.local:80                  │
+│       │                                                                │
+│       ▼                                                                │
+│   Pod (bugsink-deployment) ◄──► MariaDB Cluster                        │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+### Deployment Steps
+
+1. **Verify your AKS Context with `az` and `kubectl`:**
+   ```bash
+   # Ensure you are on the fa-common context
+   kubectl config use-context fa-common
+   ```
+
+2. **Configure Secrets:**
+   Copy [`k8s/secret.example.yaml`](file:///c:/Users/Animesh/Desktop/Reference_Projects/MCP/bugsink-mcp/k8s/secret.example.yaml) to `k8s/secret.yaml` and set your Bugsink token:
+   ```yaml
+   apiVersion: v1
+   kind: Secret
+   metadata:
+     name: mcp-bugsink-secret
+     namespace: mcp
+   type: Opaque
+   stringData:
+     BUGSINK_TOKEN: "your_bugsink_token_here"
+     MCP_HTTP_AUTH_TOKEN: "your_secret_bearer_token_here"
+   ```
+
+3. **Deploy with Kustomize:**
+   ```bash
+   kubectl apply -k k8s/
+   # or apply secret and kustomize
+   kubectl apply -f k8s/secret.yaml
+   kubectl apply -k k8s/
+   ```
+
+4. **Verify Deployment:**
+   ```bash
+   kubectl get pods,svc,ingress -n mcp -l app=mcp-bugsink
+   ```
+
+5. **Test In-Cluster or via HTTPS:**
+   ```bash
+   # Test healthcheck
+   curl -k https://mcp-bugsink.fieldassist.io/healthz
+
+   # Test Streamable HTTP over HTTPS
+   curl -k -X POST https://mcp-bugsink.fieldassist.io/mcp \
+     -H "Content-Type: application/json" \
+     -H "Accept: application/json, text/event-stream" \
+     -H "Authorization: Bearer YOUR_AUTH_TOKEN" \
+     -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"curl","version":"1.0"}}}'
+   ```
+
+---
+
+## Container Builds (Node & Bun Multi-Target)
+
+The multi-stage [`Dockerfile`](file:///c:/Users/Animesh/Desktop/Reference_Projects/MCP/bugsink-mcp/Dockerfile) supports both Node.js and Bun runtimes:
+
+```bash
+# Build with default Node.js runtime
+docker build -t ghcr.io/anime-shed/bugsink-mcp:latest .
+
+# Build with Bun runtime (ultralight & fast)
+docker build --target runtime-bun -t ghcr.io/anime-shed/bugsink-mcp:bun .
+
+# Run locally
 docker run --rm -p 8080:8080 \
-  -e BUGSINK_URL=https://your-bugsink.example.com \
-  -e BUGSINK_TOKEN=your-api-token \
-  -e MCP_HTTP_AUTH_TOKEN=$(openssl rand -hex 32) \
-  bugsink-mcp
+  -e BUGSINK_URL=https://fa-bugsink.fieldassist.io \
+  -e BUGSINK_TOKEN=your-token \
+  -e MCP_HTTP_AUTH_TOKEN=secret \
+  ghcr.io/anime-shed/bugsink-mcp:latest
 ```
 
-The image is multi-stage (Node 20-slim): TypeScript is compiled in the build stage and only `dist/` + production dependencies land in the runtime image. `PORT=8080` is the default, matching Cloud Run's contract; override at deploy time if your platform uses a different port.
+---
 
-For Cloud Run, deploy with both `BUGSINK_TOKEN` and `MCP_HTTP_AUTH_TOKEN` stored as Secret Manager secrets and injected as env vars. Allow unauthenticated invocations only if you intend to publicly expose the server (not recommended).
-
-## MCP Client Configuration
-
-### Claude Desktop
-
-Add to your Claude Desktop configuration (`~/.claude/claude_desktop_config.json`):
-
-```json
-{
-  "mcpServers": {
-    "bugsink": {
-      "command": "npx",
-      "args": ["bugsink-mcp"],
-      "env": {
-        "BUGSINK_URL": "https://your-bugsink-instance.com",
-        "BUGSINK_TOKEN": "your-api-token"
-      }
-    }
-  }
-}
-```
-
-### Claude Code CLI
-
-```bash
-claude mcp add bugsink -- npx bugsink-mcp
-```
-
-Then set environment variables in your shell or `.env` file.
-
-### Cursor
-
-Add to your Cursor MCP settings:
-
-```json
-{
-  "mcpServers": {
-    "bugsink": {
-      "command": "npx",
-      "args": ["bugsink-mcp"],
-      "env": {
-        "BUGSINK_URL": "https://your-bugsink-instance.com",
-        "BUGSINK_TOKEN": "your-api-token"
-      }
-    }
-  }
-}
-```
-
-### Remote HTTP client (e.g. an MCP gateway)
-
-Point the client at `http://<host>:<MCP_HTTP_PORT>` with `Authorization: Bearer <MCP_HTTP_AUTH_TOKEN>` if configured.
+## MCP Client Configuration (Local stdio)
 
 ## Available Tools
 

@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: mcp-bugsink
+  namespace: mcp
+  labels:
+    app: mcp-bugsink
+spec:
+  type: ClusterIP
+  selector:
+    app: mcp-bugsink
+  ports:
+  - name: http
+    port: 8080
+    targetPort: http
+    protocol: TCP

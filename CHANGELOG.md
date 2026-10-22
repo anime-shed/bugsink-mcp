@@ -30,8 +30,20 @@ Comprehensive feature update incorporating the issue triage suite and project ac
   - `list_issues`: added `digested_event_count` sort mode.
 - **Ultra-fast build pipeline**:
   - Migrated build script to `bun build` with external dependency flags, reducing compilation time from hours of `tsc` deadlocks down to ~15ms.
+- **Multi-transport architecture (Streamable HTTP, WebSocket, SSE, and Healthchecks)**:
+  - Added full-duplex WebSocket transport (`/ws` and `/`) for real-time JSON-RPC 2.0 streaming.
+  - Added Server-Sent Events transport (`/sse` and `/messages`) for streaming MCP client compatibility.
+  - Upgraded Streamable HTTP with normalized `Accept` headers and full CORS support.
+  - Added Kubernetes liveness and readiness probe healthcheck endpoints (`/healthz`, `/health`, `/livez`) returning 200 OK with service metadata.
+- **Production Kubernetes deployment for `fa-common` cluster (`mcp` namespace)**:
+  - Added `k8s/` manifests (`deployment.yaml`, `service.yaml`, `ingress.yaml`, `configmap.yaml`, `secret.example.yaml`, `kustomization.yaml`).
+  - Pre-configured for direct in-cluster Bugsink connectivity via `http://bugsink-service.bugsink.svc.cluster.local:80`.
+  - Configured HTTPS ingress with Let's Encrypt TLS (`cert-manager.io/cluster-issuer: letsencrypt-prod`) on `mcp-bugsink.fieldassist.io` and WebSocket proxy upgrade annotations.
+- **Dual runtime execution (Node.js & Bun)**:
+  - Supported identically on Node 18+ and Bun 1.0+.
+  - Upgraded Dockerfile to multi-target build supporting both `runtime-node` and `runtime-bun` images with built-in container healthchecks.
 - **Automated test suite**:
-  - Added 21 automated unit tests across 5 test suites (`tests/access.test.ts`, `tests/client.test.ts`, `tests/event.test.ts`, `tests/tools.test.ts`, `tests/triage.test.ts`) covering all triage actions, access control boundaries, frame filtering, and tool registration hints.
+  - Expanded test suite to 26 unit and transport tests covering HTTP, SSE, WebSocket, CORS, and healthcheck endpoints alongside existing API and triage tests.
 - **Biome & Oxlint toolchain with TypeScript type checker**:
   - Replaced Prettier with `@biomejs/biome` for sub-30ms formatting and linting (`biome format`, `biome check`).
   - Added `oxlint` for high-speed multi-threaded lint verification.

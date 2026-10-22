@@ -11,12 +11,16 @@
  * @see https://modelcontextprotocol.io/
  */
 
+import { randomUUID } from 'node:crypto';
 import http from 'node:http';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { WebSocketServer } from 'ws';
 import * as zodModule from 'zod';
 import { z as zodNamed } from 'zod';
+import { WebSocketServerTransport } from './websocket-transport.js';
 
 const z =
   zodNamed ??
@@ -1103,61 +1107,207 @@ export function createServer(clientInstance: BugsinkClient = defaultClient): Mcp
 // ============================================================================
 
 /**
- * Serve over Streamable HTTP (stateless JSON mode).
+ * Serve over multi-transport HTTP server (Streamable HTTP, SSE, WebSocket, and Healthchecks).
  */
-async function startHttpServer(port: number): Promise<void> {
+export async function startHttpServer(port: number): Promise<http.Server> {
   const authToken = process.env.MCP_HTTP_AUTH_TOKEN;
+  const sseSessions = new Map<string, SSEServerTransport>();
+
+  function isAuthorized(req: http.IncomingMessage, url: URL): boolean {
+    if (!authToken) return true;
+    const header = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+    if (header === authToken) return true;
+    const queryToken = url.searchParams.get('token');
+    if (queryToken === authToken) return true;
+    const secProto = req.headers['sec-websocket-protocol'];
+    if (
+      secProto
+        ?.split(',')
+        .map((s) => s.trim())
+        .includes(authToken)
+    ) {
+      return true;
+    }
+    return false;
+  }
 
   const httpServer = http.createServer(async (req, res) => {
-    if (authToken) {
-      const presented = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
-      if (presented !== authToken) {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204);
+      res.end();
+      return;
+    }
+
+    const host = req.headers.host || 'localhost';
+    const url = new URL(req.url || '/', `http://${host}`);
+
+    // Health check endpoint for Kubernetes liveness & readiness probes
+    if (
+      req.method === 'GET' &&
+      (url.pathname === '/healthz' || url.pathname === '/health' || url.pathname === '/livez')
+    ) {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(
+        JSON.stringify({
+          status: 'ok',
+          service: 'bugsink-mcp',
+          version: '0.4.0',
+          transports: ['streamable-http', 'sse', 'websocket', 'stdio'],
+          bugsink_url: BUGSINK_URL,
+        })
+      );
+      return;
+    }
+
+    // SSE Endpoint (establish SSE stream)
+    if (req.method === 'GET' && url.pathname === '/sse') {
+      if (authToken && !isAuthorized(req, url)) {
         res.writeHead(401, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'unauthorized' }));
         return;
       }
-    }
-    if (req.method !== 'POST') {
-      res.writeHead(405, { 'Content-Type': 'application/json', Allow: 'POST' });
-      res.end(JSON.stringify({ error: 'method_not_allowed' }));
+      const sseTransport = new SSEServerTransport('/messages', res);
+      const sseServer = createServer();
+      sseSessions.set(sseTransport.sessionId, sseTransport);
+      let isClosing = false;
+      sseTransport.onclose = () => {
+        if (!isClosing) {
+          isClosing = true;
+          sseSessions.delete(sseTransport.sessionId);
+          void sseServer.close();
+        }
+      };
+      await sseServer.connect(sseTransport);
       return;
     }
 
-    let body = '';
-    for await (const chunk of req) body += chunk;
-    let parsed: unknown;
-    try {
-      parsed = body ? JSON.parse(body) : undefined;
-    } catch {
-      res.writeHead(400, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'invalid_json' }));
-      return;
-    }
-
-    const server = createServer();
-    const transport = new StreamableHTTPServerTransport({
-      sessionIdGenerator: undefined,
-      enableJsonResponse: true,
-    });
-    res.on('close', () => {
-      void transport.close();
-      void server.close();
-    });
-    try {
-      await server.connect(transport);
-      await transport.handleRequest(req, res, parsed);
-    } catch (error) {
-      console.error('HTTP request handling failed:', error);
-      if (!res.headersSent) {
-        res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'internal_error' }));
+    // SSE Messages Endpoint
+    if (req.method === 'POST' && url.pathname === '/messages') {
+      if (authToken && !isAuthorized(req, url)) {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'unauthorized' }));
+        return;
       }
+      const sessionId = url.searchParams.get('sessionId');
+      const transport = sessionId ? sseSessions.get(sessionId) : undefined;
+      if (!transport) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'session_not_found' }));
+        return;
+      }
+      let body = '';
+      for await (const chunk of req) body += chunk;
+      let parsed: unknown;
+      try {
+        parsed = body ? JSON.parse(body) : undefined;
+      } catch {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'invalid_json' }));
+        return;
+      }
+      await transport.handlePostMessage(req as any, res, parsed);
+      return;
+    }
+
+    // Streamable HTTP endpoint (POST / or POST /mcp)
+    if (req.method === 'POST' && (url.pathname === '/' || url.pathname === '/mcp')) {
+      if (authToken && !isAuthorized(req, url)) {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'unauthorized' }));
+        return;
+      }
+
+      if (
+        !req.headers.accept ||
+        req.headers.accept === '*/*' ||
+        !req.headers.accept.includes('text/event-stream') ||
+        !req.headers.accept.includes('application/json')
+      ) {
+        req.headers.accept = 'application/json, text/event-stream';
+      }
+
+      let body = '';
+      for await (const chunk of req) body += chunk;
+      let parsed: unknown;
+      try {
+        parsed = body ? JSON.parse(body) : undefined;
+      } catch {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'invalid_json' }));
+        return;
+      }
+
+      const server = createServer();
+      const transport = new StreamableHTTPServerTransport({
+        sessionIdGenerator: undefined,
+        enableJsonResponse: true,
+      });
+      res.on('close', () => {
+        void transport.close();
+        void server.close();
+      });
+      try {
+        await server.connect(transport);
+        await transport.handleRequest(req, res, parsed);
+      } catch (error) {
+        console.error('HTTP request handling failed:', error);
+        if (!res.headersSent) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'internal_error' }));
+        }
+      }
+      return;
+    }
+
+    res.writeHead(404, { 'Content-Type': 'application/json' });
+    res.end(
+      JSON.stringify({
+        error: 'not_found',
+        message:
+          'Bugsink MCP server. Endpoints: /healthz, /mcp (POST), /sse (GET), /messages (POST), /ws (WebSocket)',
+      })
+    );
+  });
+
+  // WebSocket Server setup
+  const wss = new WebSocketServer({ noServer: true });
+  httpServer.on('upgrade', (req, socket, head) => {
+    const host = req.headers.host || 'localhost';
+    const url = new URL(req.url || '/', `http://${host}`);
+    if (url.pathname === '/ws' || url.pathname === '/websocket' || url.pathname === '/') {
+      if (authToken && !isAuthorized(req, url)) {
+        socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+        socket.destroy();
+        return;
+      }
+      wss.handleUpgrade(req, socket, head, (ws) => {
+        const server = createServer();
+        const sessionId = randomUUID();
+        const transport = new WebSocketServerTransport(ws, sessionId);
+        server.connect(transport).catch((err) => {
+          console.error('WebSocket MCP connection error:', err);
+          ws.close();
+        });
+      });
+    } else {
+      socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
+      socket.destroy();
     }
   });
 
-  httpServer.listen(port, () => {
-    console.error(`Bugsink MCP server started (streamable-http) on port ${port}`);
-    console.error(`Connected to: ${BUGSINK_URL}`);
+  return new Promise((resolve) => {
+    httpServer.listen(port, () => {
+      console.error(`Bugsink MCP server started on port ${port}`);
+      console.error(`Connected to Bugsink: ${BUGSINK_URL}`);
+      console.error(
+        'Available transports: Streamable HTTP (/mcp), SSE (/sse), WebSocket (/ws), Healthcheck (/healthz)'
+      );
+      resolve(httpServer);
+    });
   });
 }
 

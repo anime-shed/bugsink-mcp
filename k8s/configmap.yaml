@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mcp-bugsink-config
+  namespace: mcp
+data:
+  PORT: "8080"
+  MCP_HTTP_PORT: "8080"
+  # In-cluster communication with Bugsink running inside the fa-common cluster
+  BUGSINK_URL: "http://bugsink-service.bugsink.svc.cluster.local"
+  BUGSINK_READ_ONLY: "false"
