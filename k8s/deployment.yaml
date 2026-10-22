@@ -23,7 +23,7 @@ spec:
     spec:
       containers:
       - name: mcp-bugsink
-        image: ghcr.io/anime-shed/bugsink-mcp/bugsink:latest
+        image: ghcr.io/anime-shed/bugsink-mcp:latest
         imagePullPolicy: Always
         ports:
         - name: http

@@ -22,9 +22,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: |
-            ghcr.io/${{ github.repository }}/bugsink
-            ghcr.io/${{ github.repository }}
+          images: ghcr.io/${{ github.repository }}
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=sha,format=short
@@ -43,15 +41,13 @@ jobs:
           context: .
           file: Dockerfile  # Adjust if your Dockerfile has a different name or path
           push: true
-          tags: |
-            ghcr.io/${{ github.repository }}/bugsink:latest
-            ghcr.io/${{ github.repository }}:latest
+          tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
       - name: Generate artifact attestation
         id: attest
         uses: actions/attest-build-provenance@v2
         with:
-          subject-name: ghcr.io/${{ github.repository }}/bugsink
+          subject-name: ghcr.io/${{ github.repository }}
           subject-digest: ${{ steps.build.outputs.digest }}  # Reference the digest output
           push-to-registry: true
