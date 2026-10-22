@@ -7,8 +7,10 @@ This server enables AI assistants like Claude, Cursor, and other MCP-compatible 
 ## Features
 
 - **Read tools** (`readOnlyHint: true`) — explore projects, teams, issues, events, releases, and stacktraces without side effects
-- **Write tools** (`destructiveHint: true`) — create/update projects and teams, mark releases
-- **Cursor-based pagination** — `list_projects`, `list_teams`, `list_issues`, `list_events`, and `list_releases` all return `Next cursor` / `Previous cursor` so LLM agents can walk large result sets without losing the filter context
+- **Write & Triage tools** (`destructiveHint: true`) — resolve, reopen, mute (indefinite, relative duration, or threshold-based), unmute, comment, and delete issues; create/update projects, teams, and releases
+- **Granular event inspection & diagnostics** — get compact summaries, filter out vendor/node_modules frames (`application_only`), extract breadcrumbs and exceptions, or fetch the latest event stacktrace directly via `get_latest_event_stacktrace`
+- **Security & access controls** — restrict agent queries and triage actions to authorized projects via `BUGSINK_ALLOWED_PROJECTS`, or lock the server into read-only mode via `BUGSINK_READ_ONLY`
+- **Cursor-based pagination** — `list_projects`, `list_teams`, `list_issues`, `list_events`, and `list_releases` all return `Next cursor` / `Previous cursor` so LLM agents can walk large result sets without losing filter context
 - **Two transports** — stdio (default) for local clients, and Streamable-HTTP (stateless JSON) for remote MCP clients and gateways
 - **Container-ready** — multi-stage Dockerfile publishes a Cloud Run–compatible image that listens on `$PORT`
 
@@ -31,8 +33,8 @@ npm install -g bugsink-mcp
 ```bash
 git clone https://github.com/anime-shed/bugsink-mcp.git
 cd bugsink-mcp
-npm install
-npm run build
+bun install
+bun run build
 ```
 
 ## Configuration
@@ -43,6 +45,8 @@ npm run build
 |----------|----------|---------|-------------|
 | `BUGSINK_URL` | Yes (read & write) | — | Your Bugsink instance URL (e.g., `https://error-tracking.example.com`), with no trailing slash |
 | `BUGSINK_TOKEN` | Yes (read & write) | — | API token authenticating requests to the Bugsink API |
+| `BUGSINK_READ_ONLY` | No | `false` | When `true`, disables all mutating tools (`create_*`, `update_*`, `resolve_issue`, `reopen_issue`, `mute_issue`, `unmute_issue`, `comment_on_issue`, `delete_issue`), locking the server to read-only tools |
+| `BUGSINK_ALLOWED_PROJECTS` | No | unset | Comma-separated list of allowed integer project IDs (e.g. `1,2,5`). Restricts queries, events, and mutations strictly to the authorized projects |
 | `MCP_HTTP_PORT` | No | unset | If set (any numeric port), the server runs in Streamable-HTTP mode instead of stdio. Absent → stdio (unchanged default) |
 | `PORT` | No | `8080` | Alternate HTTP-mode port. Read in addition to `MCP_HTTP_PORT`; either one enables HTTP mode. Cloud Run injects `PORT`, so a default of `8080` is set in the Dockerfile |
 | `MCP_HTTP_AUTH_TOKEN` | No | unset | If set, every HTTP request must carry `Authorization: Bearer <token>` with a matching value; otherwise the server returns `401`. Distinct from `BUGSINK_TOKEN` (the upstream API token) |
@@ -218,9 +222,9 @@ List issues for a specific project. Paginated.
 
 **Parameters:**
 - `project_id` (number, required)
-- `status` (string, optional): e.g. `unresolved`, `resolved`, `muted`
+- `status` (enum, optional): `open` | `unresolved` | `resolved` | `muted` | `all`
 - `limit` (number, optional, default `25`)
-- `sort` (enum, optional): `digest_order` | `last_seen`
+- `sort` (enum, optional): `digest_order` | `last_seen` | `digested_event_count`
 - `order` (enum, optional): `asc` | `desc`
 - `cursor` (string, optional)
 
@@ -228,7 +232,50 @@ List issues for a specific project. Paginated.
 Get detailed information about a specific issue.
 
 **Parameters:**
-- `issue_id` (string, required): The issue UUID
+- `issue_id` (string, required): The issue UUID or friendly ID
+
+#### `resolve_issue` *(write)*
+Resolve an issue unconditionally, in the next release, or in the latest release.
+
+**Parameters:**
+- `issue_id` (string, required): The issue UUID or friendly ID
+- `mode` (enum, optional): `unconditionally` (default) | `next_release` | `latest_release`
+
+#### `reopen_issue` *(write)*
+Reopen a previously resolved issue, returning it to unresolved state.
+
+**Parameters:**
+- `issue_id` (string, required): The issue UUID or friendly ID
+
+#### `mute_issue` *(write)*
+Mute an issue indefinitely, for a relative period (e.g. 3 days), or until an occurrence threshold is reached.
+
+**Parameters:**
+- `issue_id` (string, required): The issue UUID or friendly ID
+- `mode` (enum, optional): `indefinite` (default) | `for_period` | `until_threshold`
+- `period_name` (enum, optional): `minute` | `hour` | `day` | `week` | `month` | `year`
+- `nr_of_periods` (number, optional): Positive integer (e.g. 3)
+- `gte_threshold` (number, optional): Integer threshold for `until_threshold` mode
+
+#### `unmute_issue` *(write)*
+Unmute a muted issue.
+
+**Parameters:**
+- `issue_id` (string, required): The issue UUID or friendly ID
+
+#### `comment_on_issue` *(write)*
+Add a diagnostic or team comment visible in Bugsink's issue history.
+
+**Parameters:**
+- `issue_id` (string, required): The issue UUID or friendly ID
+- `comment` (string, required): Comment text (1–4000 characters)
+
+#### `delete_issue` *(write)*
+Permanently delete an issue and all its events in Bugsink. Requires explicit safety confirmation.
+
+**Parameters:**
+- `issue_id` (string, required): The issue UUID or friendly ID
+- `confirm` (literal `true`, required): Must be set to `true` to execute deletion
 
 #### `analyze_issue_context` *(read)*
 Holistic analysis tool — retrieves issue details, recent events, and the most recent full stacktrace in one call. Preferred when an LLM is investigating a single issue end-to-end.
@@ -247,16 +294,27 @@ List events (individual error occurrences) for a specific issue. Paginated.
 - `cursor` (string, optional)
 
 #### `get_event` *(read)*
-Get detailed event information including full stacktrace and context.
+Get detailed event information. Supports targeted section retrieval and filtering out framework/vendor stack frames.
 
 **Parameters:**
-- `event_id` (string, required): The event UUID
+- `event_id` (string, required): The Bugsink-internal event ID (use `id` from `list_events`, not `event_id`)
+- `section` (enum, optional, default `summary`): `summary` | `frames` | `exceptions` | `breadcrumbs` | `stacktrace` | `raw`
+- `application_only` (boolean, optional, default `true`): Excludes vendor/ and node_modules/ frames from frames view
+- `include_source` (boolean, optional, default `true`): Includes source code context lines
+- `max_chars` (number, optional, default `4000`): Maximum character limit for output text
 
 #### `get_stacktrace` *(read)*
-Get an event's stacktrace as Markdown. The `event_id` here is the Bugsink-internal event ID (the `id` field returned by `list_events`), **not** the application-level `event_id`.
+Get an event's stacktrace as Markdown. Uses the Bugsink-internal event ID (`id` field from `list_events`).
 
 **Parameters:**
 - `event_id` (string, required): The Bugsink-internal event ID
+
+#### `get_latest_event_stacktrace` *(read)*
+Read the newest stored occurrence of an issue directly as a rendered Markdown stacktrace, saving agent roundtrips.
+
+**Parameters:**
+- `issue_id` (string, required): The issue UUID or friendly ID
+- `max_chars` (number, optional, default `4000`)
 
 ### Releases
 
@@ -287,37 +345,36 @@ Once configured, you can ask your AI assistant:
 
 - "List all projects in Bugsink"
 - "Show me the latest issues for project 1"
-- "What's the stacktrace for issue #42?"
+- "What's the stacktrace for the latest event on issue #42?"
+- "Resolve issue APP-45 in the next release"
+- "Mute issue 1234 for 3 days"
+- "Comment on issue #10: 'Investigating potential memory leak in checkout loop'"
 - "Analyze the context of this incident — pull the issue details, recent events, and stacktrace"
 - "Mark release v2.3.1 for project 4"
-- "Get the details of the most recent error event"
 
 ## Development
 
 ```bash
 # Install dependencies
-npm install
+bun install
 
 # Run in development mode (stdio)
-npm run dev
+bun run dev
 
 # Run in development mode with HTTP transport
-MCP_HTTP_PORT=8080 npm run dev
+MCP_HTTP_PORT=8080 bun run dev
 
-# Build for production
-npm run build
+# Build for production (bundles in ~20ms)
+bun run build
 
-# Run tests
-npm test
-
-# Lint
-npm run lint
+# Run automated tests
+bun test
 
 # Format
-npm run format
+bun run format
 ```
 
-The `dist/index.js` binary doubles as the npm package entrypoint. After `npm run build` you can invoke it directly with `node dist/index.js` and the same env-var-driven transport selection applies.
+The `dist/index.js` binary doubles as the npm package entrypoint. After `bun run build` you can invoke it directly with `node dist/index.js` or `bun dist/index.js`.
 
 ## API Compatibility
 
@@ -331,14 +388,16 @@ MIT
 
 ## Contributors
 
-The original version of this server lives upstream at [`j-shelfwood/bugsink-mcp`](https://github.com/j-shelfwood/bugsink-mcp.git). This curated fork incorporates enhancements cherry-picked from [`razzaque/bugsink-mcp`](https://github.com/razzaque/bugsink-mcp.git) and ships them on top of j-shelfwood's base. Thanks to everyone who has contributed code, ideas, or reviews.
+The original version of this server lives upstream at [`j-shelfwood/bugsink-mcp`](https://github.com/j-shelfwood/bugsink-mcp.git). This curated fork incorporates enhancements cherry-picked from [`razzaque/bugsink-mcp`](https://github.com/razzaque/bugsink-mcp.git), triage and access control capabilities from [`rexlManu/bugsink-mcp`](https://github.com/rexlManu/bugsink-mcp.git), direct Bugsink canonical mappings from [`draded/bugsink-mcp`](https://github.com/draded/bugsink-mcp.git), and ships them on top of j-shelfwood's base. Thanks to everyone who has contributed code, ideas, or reviews.
 
 | Contributor | Role | Highlights |
 |-------------|------|------------|
 | [Joris Schelfhout](https://github.com/j-shelfwood) (`joris@shelfwood.co`) | Original author | Initial release, mutation tools, API coverage (`v0.1.0` → `v0.2.0`) |
 | [jacobfrantz1](https://github.com/jacobfrantz1) | Pagination contributor | Filter-signature-aware cursors, spill cap raised to 5, ID disambiguation |
 | [Brian Razzaque](https://github.com/razzaque) (`razzaque@gmail.com`) | Transports + UX | Streamable-HTTP transport, Cloud Run–ready container, MCP tool annotations (`readOnlyHint` / `destructiveHint`), stacktrace workaround |
-| [Animesh](https://github.com/anime-shed) (`animesh@flick2know.com`) | Fork maintainer | Curated integration of upstream enhancements, documentation |
+| [Emmanuel Lampe](https://github.com/rexlManu) (`mail@emmanuel-lampe.de`) | Triage & Governance | Issue triage suite (resolve, reopen, mute, unmute, comment, delete), in-app stack frame filtering, project access controls (`BUGSINK_ALLOWED_PROJECTS`, `BUGSINK_READ_ONLY`) |
+| [Domagoj Rade](https://github.com/draded) (`dom@bitreport.app`) | API mapping contributor | Direct canonical Bugsink REST endpoint mapping reference |
+| [Animesh](https://github.com/anime-shed) (`animesh@flick2know.com`) | Fork maintainer | Curated integration of upstream enhancements, OpenAPI 3.0 schema alignment, test suite, documentation |
 
 If you'd like to be listed here, open a PR — link it in the description and it'll be added on merge.
 

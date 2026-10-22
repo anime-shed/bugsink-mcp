@@ -5,7 +5,7 @@
  * API docs: https://www.bugsink.com/blog/bugsink-2.0-api/
  */
 
-import { truncateText } from "./presentation.js";
+import { truncateText } from './presentation.js';
 
 export interface BugsinkConfig {
   baseUrl: string;
@@ -275,7 +275,7 @@ async function paginateWithLimit<T>(
   filter: (items: T[]) => T[],
   limit: number,
   inputCursor: string | undefined,
-  signature?: string,
+  signature?: string
 ): Promise<PaginatedResponse<T>> {
   const composite = inputCursor ? decodeCompositeCursor(inputCursor) : null;
 
@@ -285,8 +285,8 @@ async function paginateWithLimit<T>(
   if (composite?.s !== undefined && composite.s !== signature) {
     throw new Error(
       `Cursor was generated under a different filter/sort/order ` +
-      `(cursor: "${composite.s}", current: "${signature ?? ''}"). ` +
-      `Restart pagination from the beginning after changing parameters.`,
+        `(cursor: "${composite.s}", current: "${signature ?? ''}"). ` +
+        `Restart pagination from the beginning after changing parameters.`
     );
   }
 
@@ -314,11 +314,7 @@ async function paginateWithLimit<T>(
 
   // Spill into subsequent server pages until limit is filled, the server runs
   // out of pages, or we hit the per-call fetch cap.
-  while (
-    results.length < limit &&
-    endPage.next &&
-    fetchesUsed < MAX_SERVER_FETCHES_PER_CALL
-  ) {
+  while (results.length < limit && endPage.next && fetchesUsed < MAX_SERVER_FETCHES_PER_CALL) {
     const nextServerCursor = extractCursorFromUrl(endPage.next);
     if (nextServerCursor === null) break;
 
@@ -394,13 +390,13 @@ export class BugsinkClient {
 
   requireProject(projectId: number): void {
     if (!this.isProjectAllowed(projectId)) {
-      throw new Error("Project access denied by BUGSINK_ALLOWED_PROJECTS.");
+      throw new Error('Project access denied by BUGSINK_ALLOWED_PROJECTS.');
     }
   }
 
   private async fetch<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     if (this.readOnly && options.method && options.method !== 'GET') {
-      throw new Error("Writes are disabled by BUGSINK_READ_ONLY.");
+      throw new Error('Writes are disabled by BUGSINK_READ_ONLY.');
     }
 
     const url = `${this.baseUrl}/api/canonical/0${endpoint}`;
@@ -408,7 +404,7 @@ export class BugsinkClient {
     const response = await this.fetcher(url, {
       ...options,
       headers: {
-        'Authorization': `Bearer ${this.apiToken}`,
+        Authorization: `Bearer ${this.apiToken}`,
         'Content-Type': 'application/json',
         ...options.headers,
       },
@@ -429,7 +425,10 @@ export class BugsinkClient {
   /**
    * List all projects
    */
-  async listProjects(options?: { cursor?: string; team?: string }): Promise<PaginatedResponse<Project>> {
+  async listProjects(options?: {
+    cursor?: string;
+    team?: string;
+  }): Promise<PaginatedResponse<Project>> {
     const params = new URLSearchParams();
     if (options?.cursor) {
       params.set('cursor', options.cursor);
@@ -438,11 +437,13 @@ export class BugsinkClient {
       params.set('team', options.team);
     }
     const qs = params.toString();
-    const response = await this.fetch<PaginatedResponse<Project>>(`/projects/${qs ? `?${qs}` : ''}`);
+    const response = await this.fetch<PaginatedResponse<Project>>(
+      `/projects/${qs ? `?${qs}` : ''}`
+    );
     if (this.allowedProjects) {
       return {
         ...response,
-        results: response.results.filter(p => this.isProjectAllowed(p.id)),
+        results: response.results.filter((p) => this.isProjectAllowed(p.id)),
       };
     }
     return response;
@@ -478,13 +479,16 @@ export class BugsinkClient {
    * cursor helper, so paginating with a small `limit` walks through items
    * correctly across server-page boundaries.
    */
-  async listIssues(projectId: number, options?: {
-    status?: string;
-    limit?: number;
-    sort?: 'digest_order' | 'last_seen' | 'digested_event_count';
-    order?: 'asc' | 'desc';
-    cursor?: string;
-  }): Promise<PaginatedResponse<Issue>> {
+  async listIssues(
+    projectId: number,
+    options?: {
+      status?: string;
+      limit?: number;
+      sort?: 'digest_order' | 'last_seen' | 'digested_event_count';
+      order?: 'asc' | 'desc';
+      cursor?: string;
+    }
+  ): Promise<PaginatedResponse<Issue>> {
     this.requireProject(projectId);
     const limit = options?.limit ?? 25;
 
@@ -534,10 +538,13 @@ export class BugsinkClient {
    * client-side via the composite cursor helper, so paginating with a small
    * `limit` walks through events correctly across server-page boundaries.
    */
-  async listEvents(issueId: string, options?: {
-    limit?: number;
-    cursor?: string;
-  }): Promise<PaginatedResponse<Event>> {
+  async listEvents(
+    issueId: string,
+    options?: {
+      limit?: number;
+      cursor?: string;
+    }
+  ): Promise<PaginatedResponse<Event>> {
     if (this.allowedProjects) {
       await this.getIssue(issueId);
     }
@@ -583,11 +590,12 @@ export class BugsinkClient {
     if (this.allowedProjects) {
       await this.checkIssueProject(issueId);
     }
-    const endpoint = mode === 'next_release'
-      ? `/issues/${issueId}/resolve-next/`
-      : mode === 'latest_release'
-        ? `/issues/${issueId}/resolve-latest/`
-        : `/issues/${issueId}/resolve/`;
+    const endpoint =
+      mode === 'next_release'
+        ? `/issues/${issueId}/resolve-next/`
+        : mode === 'latest_release'
+          ? `/issues/${issueId}/resolve-latest/`
+          : `/issues/${issueId}/resolve/`;
 
     return this.fetch<Issue>(endpoint, { method: 'POST' });
   }
@@ -827,7 +835,10 @@ export class BugsinkClient {
   /**
    * List releases for a project
    */
-  async listReleases(projectId: number, options?: { cursor?: string }): Promise<PaginatedResponse<Release>> {
+  async listReleases(
+    projectId: number,
+    options?: { cursor?: string }
+  ): Promise<PaginatedResponse<Release>> {
     this.requireProject(projectId);
     const params = new URLSearchParams();
     params.set('project', projectId.toString());

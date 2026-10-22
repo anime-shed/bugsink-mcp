@@ -5,7 +5,7 @@
  * and security-conscious truncation of diagnostic payloads.
  */
 
-import type { Event, StackFrame } from "./bugsink-client.js";
+import type { Event, StackFrame } from './bugsink-client.js';
 
 export interface ProcessedFrame {
   filename: string;
@@ -21,7 +21,7 @@ export interface ProcessedFrame {
  */
 export function isApplicationFrame(frame: StackFrame): boolean {
   if (frame.in_app === false) return false;
-  const normalizedPath = (frame.filename || "").replace(/\\/g, "/");
+  const normalizedPath = (frame.filename || '').replace(/\\/g, '/');
   if (/(^|\/)(vendor|node_modules)\//i.test(normalizedPath)) {
     return false;
   }
@@ -92,24 +92,24 @@ export function formatEventSummary(event: Event): string {
     if (message) lines.push(`  Message: ${message}`);
 
     if (request?.url) {
-      lines.push(`  Request: ${request.method || "GET"} ${request.url}`);
+      lines.push(`  Request: ${request.method || 'GET'} ${request.url}`);
     }
     if (browser?.name) {
-      lines.push(`  Browser: ${browser.name} ${browser.version || ""}`);
+      lines.push(`  Browser: ${browser.name} ${browser.version || ''}`);
     }
     if (os?.name) {
-      lines.push(`  OS: ${os.name} ${os.version || ""}`);
+      lines.push(`  OS: ${os.name} ${os.version || ''}`);
     }
 
     if (exception?.values?.length) {
-      lines.push("  Exceptions:");
+      lines.push('  Exceptions:');
       for (const exc of exception.values) {
         lines.push(`    - ${exc.type}: ${exc.value}`);
       }
     }
   }
 
-  return lines.join("\n");
+  return lines.join('\n');
 }
 
 /**
@@ -133,9 +133,7 @@ export function extractEventExceptions(
 /**
  * Extract structured breadcrumbs from an event payload.
  */
-export function extractEventBreadcrumbs(
-  event: Event
-): Array<Record<string, unknown>> {
+export function extractEventBreadcrumbs(event: Event): Array<Record<string, unknown>> {
   const data = event.data as Record<string, unknown> | undefined;
   if (!data) return [];
 
@@ -155,7 +153,7 @@ export function extractEventBreadcrumbs(
   if (!Array.isArray(rawList)) return [];
 
   return rawList.map((item) => {
-    if (typeof item === "object" && item !== null) {
+    if (typeof item === 'object' && item !== null) {
       return item as Record<string, unknown>;
     }
     return { value: item };
