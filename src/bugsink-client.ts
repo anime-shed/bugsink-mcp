@@ -8,6 +8,8 @@
 export interface BugsinkConfig {
   baseUrl: string;
   apiToken: string;
+  readOnly?: boolean;
+  allowedProjects?: number[];
 }
 
 export interface PaginatedResponse<T> {
@@ -356,16 +358,37 @@ async function paginateWithLimit<T>(
 export class BugsinkClient {
   private baseUrl: string;
   private apiToken: string;
+  readonly readOnly: boolean;
+  readonly allowedProjects?: number[];
+  private fetcher: typeof fetch;
 
-  constructor(config: BugsinkConfig) {
+  constructor(config: BugsinkConfig, fetcher: typeof fetch = fetch) {
     this.baseUrl = config.baseUrl.replace(/\/$/, '');
     this.apiToken = config.apiToken;
+    this.readOnly = config.readOnly ?? false;
+    this.allowedProjects = config.allowedProjects;
+    this.fetcher = fetcher;
+  }
+
+  isProjectAllowed(projectId: number): boolean {
+    if (!this.allowedProjects) return true;
+    return this.allowedProjects.includes(projectId);
+  }
+
+  requireProject(projectId: number): void {
+    if (!this.isProjectAllowed(projectId)) {
+      throw new Error("Project access denied by BUGSINK_ALLOWED_PROJECTS.");
+    }
   }
 
   private async fetch<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+    if (this.readOnly && options.method && options.method !== 'GET') {
+      throw new Error("Writes are disabled by BUGSINK_READ_ONLY.");
+    }
+
     const url = `${this.baseUrl}/api/canonical/0${endpoint}`;
 
-    const response = await fetch(url, {
+    const response = await this.fetcher(url, {
       ...options,
       headers: {
         'Authorization': `Bearer ${this.apiToken}`,
@@ -391,13 +414,21 @@ export class BugsinkClient {
       params.set('cursor', options.cursor);
     }
     const qs = params.toString();
-    return this.fetch<PaginatedResponse<Project>>(`/projects/${qs ? `?${qs}` : ''}`);
+    const response = await this.fetch<PaginatedResponse<Project>>(`/projects/${qs ? `?${qs}` : ''}`);
+    if (this.allowedProjects) {
+      return {
+        ...response,
+        results: response.results.filter(p => this.isProjectAllowed(p.id)),
+      };
+    }
+    return response;
   }
 
   /**
    * Get a specific project by ID
    */
   async getProject(projectId: number): Promise<Project> {
+    this.requireProject(projectId);
     return this.fetch<Project>(`/projects/${projectId}/`);
   }
 
@@ -429,6 +460,7 @@ export class BugsinkClient {
     order?: 'asc' | 'desc';
     cursor?: string;
   }): Promise<PaginatedResponse<Issue>> {
+    this.requireProject(projectId);
     const limit = options?.limit ?? 25;
 
     const fetchServerPage = (serverCursor: string | null) => {
@@ -532,6 +564,7 @@ export class BugsinkClient {
    * Update an existing project
    */
   async updateProject(projectId: number, input: UpdateProjectInput): Promise<Project> {
+    this.requireProject(projectId);
     return this.fetch<Project>(`/projects/${projectId}/`, {
       method: 'PATCH',
       body: JSON.stringify(input),
@@ -642,6 +675,7 @@ export class BugsinkClient {
    * List releases for a project
    */
   async listReleases(projectId: number, options?: { cursor?: string }): Promise<PaginatedResponse<Release>> {
+    this.requireProject(projectId);
     const params = new URLSearchParams();
     params.set('project', projectId.toString());
     if (options?.cursor) {
@@ -661,6 +695,7 @@ export class BugsinkClient {
    * Create a new release
    */
   async createRelease(input: CreateReleaseInput): Promise<Release> {
+    this.requireProject(input.project);
     return this.fetch<Release>('/releases/', {
       method: 'POST',
       body: JSON.stringify(input),
