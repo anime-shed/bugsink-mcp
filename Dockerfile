@@ -3,7 +3,7 @@
 # ── Build stage: compile with Bun (fast bundler) ──────────────────────────────
 FROM oven/bun:1-slim AS build
 WORKDIR /app
-COPY package.json ./
+COPY package.json bun.lock* ./
 RUN bun install --frozen-lockfile || bun install
 COPY tsconfig.json ./
 COPY src ./src
@@ -27,7 +27,7 @@ CMD ["node", "dist/index.js"]
 FROM oven/bun:1-slim AS runtime-bun
 WORKDIR /app
 ENV NODE_ENV=production
-COPY package.json ./
+COPY package.json bun.lock* ./
 RUN bun install --production
 COPY --from=build /app/dist ./dist
 
