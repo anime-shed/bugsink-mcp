@@ -5,6 +5,8 @@
  * API docs: https://www.bugsink.com/blog/bugsink-2.0-api/
  */
 
+import { truncateText } from "./presentation.js";
+
 export interface BugsinkConfig {
   baseUrl: string;
   apiToken: string;
@@ -427,10 +429,13 @@ export class BugsinkClient {
   /**
    * List all projects
    */
-  async listProjects(options?: { cursor?: string }): Promise<PaginatedResponse<Project>> {
+  async listProjects(options?: { cursor?: string; team?: string }): Promise<PaginatedResponse<Project>> {
     const params = new URLSearchParams();
     if (options?.cursor) {
       params.set('cursor', options.cursor);
+    }
+    if (options?.team) {
+      params.set('team', options.team);
     }
     const qs = params.toString();
     const response = await this.fetch<PaginatedResponse<Project>>(`/projects/${qs ? `?${qs}` : ''}`);
@@ -446,9 +451,10 @@ export class BugsinkClient {
   /**
    * Get a specific project by ID
    */
-  async getProject(projectId: number): Promise<Project> {
+  async getProject(projectId: number, options?: { expand?: 'team' }): Promise<Project> {
     this.requireProject(projectId);
-    return this.fetch<Project>(`/projects/${projectId}/`);
+    const qs = options?.expand ? `?expand=${options.expand}` : '';
+    return this.fetch<Project>(`/projects/${projectId}/${qs}`);
   }
 
   /**
@@ -475,7 +481,7 @@ export class BugsinkClient {
   async listIssues(projectId: number, options?: {
     status?: string;
     limit?: number;
-    sort?: 'digest_order' | 'last_seen';
+    sort?: 'digest_order' | 'last_seen' | 'digested_event_count';
     order?: 'asc' | 'desc';
     cursor?: string;
   }): Promise<PaginatedResponse<Issue>> {
@@ -799,6 +805,19 @@ export class BugsinkClient {
     }
 
     return lines.join('\n');
+  }
+
+  /**
+   * Get the latest event's stacktrace for an issue as Markdown text.
+   */
+  async getLatestEventStacktrace(issueId: string, maxChars = 4000): Promise<string> {
+    const events = await this.listEvents(issueId, { limit: 1 });
+    if (!events.results || events.results.length === 0) {
+      return 'No stored events found for this issue.';
+    }
+    const latestEvent = events.results[0];
+    const stacktrace = await this.getEventStacktrace(latestEvent.id);
+    return truncateText(stacktrace, maxChars);
   }
 
   // ============================================================================
