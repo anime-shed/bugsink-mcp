@@ -32,6 +32,10 @@ Comprehensive feature update incorporating the issue triage suite and project ac
   - Migrated build script to `bun build` with external dependency flags, reducing compilation time from hours of `tsc` deadlocks down to ~15ms.
 - **Automated test suite**:
   - Added 21 automated unit tests across 5 test suites (`tests/access.test.ts`, `tests/client.test.ts`, `tests/event.test.ts`, `tests/tools.test.ts`, `tests/triage.test.ts`) covering all triage actions, access control boundaries, frame filtering, and tool registration hints.
+- **Biome & Oxlint toolchain with TypeScript type checker**:
+  - Replaced Prettier with `@biomejs/biome` for sub-30ms formatting and linting (`biome format`, `biome check`).
+  - Added `oxlint` for high-speed multi-threaded lint verification.
+  - Added fast, non-blocking `tsc --noEmit` type checking (`bun run typecheck` and `bun run check`).
 
 ### Attribution
 
@@ -81,7 +85,6 @@ The HTTP-transport, Dockerfile, and tool-annotation commits were authored by
 [`razzaque/bugsink-mcp`](https://github.com/razzaque/bugsink-mcp) fork and
 cherry-picked onto `main` of this repository. Authorship, commit dates, and
 `Co-Authored-By` trailers are preserved verbatim:
-
 - `dfdfa29` — feat: add Streamable-HTTP transport (stateless) alongside stdio
 - `0e0eee6` — feat: Cloud Run-ready container + listen on $PORT
 - `d5fa449` — feat: declare tool annotations (readOnlyHint / destructiveHint)

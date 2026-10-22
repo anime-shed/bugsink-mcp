@@ -11,10 +11,10 @@
  * @see https://modelcontextprotocol.io/
  */
 
+import http from 'node:http';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import http from 'node:http';
 import * as zodModule from 'zod';
 import { z as zodNamed } from 'zod';
 
@@ -24,13 +24,14 @@ const z =
   (zodModule as any).default?.z ??
   (zodModule as any).default ??
   zodModule;
-import { BugsinkClient, type Issue, type Event, type Release } from './bugsink-client.js';
+
+import { BugsinkClient, type Event, type Issue } from './bugsink-client.js';
 import {
+  extractEventBreadcrumbs,
+  extractEventExceptions,
   filterFrames,
   formatEventSummary,
   truncateText,
-  extractEventExceptions,
-  extractEventBreadcrumbs,
 } from './presentation.js';
 
 // Environment configuration
@@ -147,7 +148,7 @@ function formatPagination(response: { next: string | null; previous: string | nu
   const lines: string[] = [];
   if (next) lines.push(`Next cursor: ${next}`);
   if (prev) lines.push(`Previous cursor: ${prev}`);
-  return '\n' + lines.join('\n');
+  return `\n${lines.join('\n')}`;
 }
 
 /**
@@ -160,12 +161,18 @@ export function createServer(clientInstance: BugsinkClient = defaultClient): Mcp
     version: '0.4.0',
   });
 
+  const registerTool = (
+    name: string,
+    config: any,
+    cb: (args: Record<string, any>, extra: any) => Promise<any>
+  ) => (server as any).registerTool(name, config, cb);
+
   // ============================================================================
   // Read Tools (Always Registered)
   // ============================================================================
 
   // List Projects
-  server.registerTool(
+  registerTool(
     'list_projects',
     {
       description: 'List all projects in the Bugsink instance. Optionally filter by team UUID.',
@@ -208,7 +215,7 @@ export function createServer(clientInstance: BugsinkClient = defaultClient): Mcp
   );
 
   // List Teams
-  server.registerTool(
+  registerTool(
     'list_teams',
     {
       description: 'List all teams in the Bugsink instance',
@@ -247,7 +254,7 @@ export function createServer(clientInstance: BugsinkClient = defaultClient): Mcp
   );
 
   // List Issues
-  server.registerTool(
+  registerTool(
     'list_issues',
     {
       description:
@@ -311,7 +318,7 @@ export function createServer(clientInstance: BugsinkClient = defaultClient): Mcp
   );
 
   // Get Issue Details
-  server.registerTool(
+  registerTool(
     'get_issue',
     {
       description: 'Get detailed information about a specific issue',
@@ -331,7 +338,7 @@ export function createServer(clientInstance: BugsinkClient = defaultClient): Mcp
   );
 
   // Analyze Issue Context (Smart Context)
-  server.registerTool(
+  registerTool(
     'analyze_issue_context',
     {
       description:
@@ -382,7 +389,7 @@ export function createServer(clientInstance: BugsinkClient = defaultClient): Mcp
   );
 
   // List Events
-  server.registerTool(
+  registerTool(
     'list_events',
     {
       description:
@@ -426,7 +433,7 @@ export function createServer(clientInstance: BugsinkClient = defaultClient): Mcp
   );
 
   // Get Event Details (with section selection and application frame filtering)
-  server.registerTool(
+  registerTool(
     'get_event',
     {
       description:
@@ -531,7 +538,7 @@ export function createServer(clientInstance: BugsinkClient = defaultClient): Mcp
   );
 
   // Test Connection
-  server.registerTool(
+  registerTool(
     'test_connection',
     {
       description: 'Test the connection to the Bugsink instance',
@@ -554,7 +561,7 @@ export function createServer(clientInstance: BugsinkClient = defaultClient): Mcp
   );
 
   // Get Project Details
-  server.registerTool(
+  registerTool(
     'get_project',
     {
       description: 'Get detailed information about a specific project including DSN',
@@ -592,7 +599,7 @@ export function createServer(clientInstance: BugsinkClient = defaultClient): Mcp
   );
 
   // Get Event Stacktrace (Markdown)
-  server.registerTool(
+  registerTool(
     'get_stacktrace',
     {
       description:
@@ -616,7 +623,7 @@ export function createServer(clientInstance: BugsinkClient = defaultClient): Mcp
   );
 
   // Get Latest Event Stacktrace
-  server.registerTool(
+  registerTool(
     'get_latest_event_stacktrace',
     {
       description:
@@ -641,7 +648,7 @@ export function createServer(clientInstance: BugsinkClient = defaultClient): Mcp
   );
 
   // List Releases
-  server.registerTool(
+  registerTool(
     'list_releases',
     {
       description:
@@ -682,7 +689,7 @@ export function createServer(clientInstance: BugsinkClient = defaultClient): Mcp
   );
 
   // Get Release Details
-  server.registerTool(
+  registerTool(
     'get_release',
     {
       description: 'Get detailed information about a specific release',
@@ -717,7 +724,7 @@ export function createServer(clientInstance: BugsinkClient = defaultClient): Mcp
 
   if (!clientInstance.readOnly) {
     // Resolve Issue
-    server.registerTool(
+    registerTool(
       'resolve_issue',
       {
         description:
@@ -746,7 +753,7 @@ export function createServer(clientInstance: BugsinkClient = defaultClient): Mcp
     );
 
     // Reopen Issue
-    server.registerTool(
+    registerTool(
       'reopen_issue',
       {
         description: 'Reopen a resolved issue, making it unresolved again.',
@@ -769,7 +776,7 @@ export function createServer(clientInstance: BugsinkClient = defaultClient): Mcp
     );
 
     // Mute Issue
-    server.registerTool(
+    registerTool(
       'mute_issue',
       {
         description:
@@ -823,7 +830,7 @@ export function createServer(clientInstance: BugsinkClient = defaultClient): Mcp
     );
 
     // Unmute Issue
-    server.registerTool(
+    registerTool(
       'unmute_issue',
       {
         description: 'Unmute an issue.',
@@ -846,7 +853,7 @@ export function createServer(clientInstance: BugsinkClient = defaultClient): Mcp
     );
 
     // Comment on Issue
-    server.registerTool(
+    registerTool(
       'comment_on_issue',
       {
         description: 'Add a comment to an issue in Bugsink.',
@@ -870,7 +877,7 @@ export function createServer(clientInstance: BugsinkClient = defaultClient): Mcp
     );
 
     // Delete Issue
-    server.registerTool(
+    registerTool(
       'delete_issue',
       {
         description:
@@ -897,7 +904,7 @@ export function createServer(clientInstance: BugsinkClient = defaultClient): Mcp
     );
 
     // Create Project
-    server.registerTool(
+    registerTool(
       'create_project',
       {
         description: 'Create a new project in a team',
@@ -956,7 +963,7 @@ export function createServer(clientInstance: BugsinkClient = defaultClient): Mcp
     );
 
     // Update Project
-    server.registerTool(
+    registerTool(
       'update_project',
       {
         description: "Update an existing project's settings",
@@ -976,7 +983,7 @@ export function createServer(clientInstance: BugsinkClient = defaultClient): Mcp
       },
       async ({ project_id, ...updates }) => {
         const input = Object.fromEntries(
-          Object.entries(updates).filter(([_, v]) => v !== undefined)
+          Object.entries(updates).filter(([, v]) => v !== undefined)
         );
 
         const project = await clientInstance.updateProject(project_id, input);
@@ -993,7 +1000,7 @@ export function createServer(clientInstance: BugsinkClient = defaultClient): Mcp
     );
 
     // Create Team
-    server.registerTool(
+    registerTool(
       'create_team',
       {
         description: 'Create a new team',
@@ -1022,7 +1029,7 @@ export function createServer(clientInstance: BugsinkClient = defaultClient): Mcp
     );
 
     // Update Team
-    server.registerTool(
+    registerTool(
       'update_team',
       {
         description: 'Update an existing team',
@@ -1038,7 +1045,7 @@ export function createServer(clientInstance: BugsinkClient = defaultClient): Mcp
       },
       async ({ team_id, name, visibility }) => {
         const input = Object.fromEntries(
-          Object.entries({ name, visibility }).filter(([_, v]) => v !== undefined)
+          Object.entries({ name, visibility }).filter(([, v]) => v !== undefined)
         );
 
         const team = await clientInstance.updateTeam(team_id, input);
@@ -1055,7 +1062,7 @@ export function createServer(clientInstance: BugsinkClient = defaultClient): Mcp
     );
 
     // Create Release
-    server.registerTool(
+    registerTool(
       'create_release',
       {
         description: 'Create a new release for a project',
@@ -1103,7 +1110,7 @@ async function startHttpServer(port: number): Promise<void> {
 
   const httpServer = http.createServer(async (req, res) => {
     if (authToken) {
-      const presented = (req.headers['authorization'] || '').replace(/^Bearer\s+/i, '');
+      const presented = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
       if (presented !== authToken) {
         res.writeHead(401, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'unauthorized' }));

@@ -41,15 +41,15 @@ bun run build
 
 ### Environment Variables
 
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `BUGSINK_URL` | Yes (read & write) | — | Your Bugsink instance URL (e.g., `https://error-tracking.example.com`), with no trailing slash |
-| `BUGSINK_TOKEN` | Yes (read & write) | — | API token authenticating requests to the Bugsink API |
-| `BUGSINK_READ_ONLY` | No | `false` | When `true`, disables all mutating tools (`create_*`, `update_*`, `resolve_issue`, `reopen_issue`, `mute_issue`, `unmute_issue`, `comment_on_issue`, `delete_issue`), locking the server to read-only tools |
-| `BUGSINK_ALLOWED_PROJECTS` | No | unset | Comma-separated list of allowed integer project IDs (e.g. `1,2,5`). Restricts queries, events, and mutations strictly to the authorized projects |
-| `MCP_HTTP_PORT` | No | unset | If set (any numeric port), the server runs in Streamable-HTTP mode instead of stdio. Absent → stdio (unchanged default) |
-| `PORT` | No | `8080` | Alternate HTTP-mode port. Read in addition to `MCP_HTTP_PORT`; either one enables HTTP mode. Cloud Run injects `PORT`, so a default of `8080` is set in the Dockerfile |
-| `MCP_HTTP_AUTH_TOKEN` | No | unset | If set, every HTTP request must carry `Authorization: Bearer <token>` with a matching value; otherwise the server returns `401`. Distinct from `BUGSINK_TOKEN` (the upstream API token) |
+| Variable                   | Required           | Default | Description                                                                                                                                                                                                 |
+| -------------------------- | ------------------ | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `BUGSINK_URL`              | Yes (read & write) | —       | Your Bugsink instance URL (e.g., `https://error-tracking.example.com`), with no trailing slash                                                                                                              |
+| `BUGSINK_TOKEN`            | Yes (read & write) | —       | API token authenticating requests to the Bugsink API                                                                                                                                                        |
+| `BUGSINK_READ_ONLY`        | No                 | `false` | When `true`, disables all mutating tools (`create_*`, `update_*`, `resolve_issue`, `reopen_issue`, `mute_issue`, `unmute_issue`, `comment_on_issue`, `delete_issue`), locking the server to read-only tools |
+| `BUGSINK_ALLOWED_PROJECTS` | No                 | unset   | Comma-separated list of allowed integer project IDs (e.g. `1,2,5`). Restricts queries, events, and mutations strictly to the authorized projects                                                            |
+| `MCP_HTTP_PORT`            | No                 | unset   | If set (any numeric port), the server runs in Streamable-HTTP mode instead of stdio. Absent → stdio (unchanged default)                                                                                     |
+| `PORT`                     | No                 | `8080`  | Alternate HTTP-mode port. Read in addition to `MCP_HTTP_PORT`; either one enables HTTP mode. Cloud Run injects `PORT`, so a default of `8080` is set in the Dockerfile                                      |
+| `MCP_HTTP_AUTH_TOKEN`      | No                 | unset   | If set, every HTTP request must carry `Authorization: Bearer <token>` with a matching value; otherwise the server returns `401`. Distinct from `BUGSINK_TOKEN` (the upstream API token)                     |
 
 ### Generating an API Token
 
@@ -146,30 +146,33 @@ Point the client at `http://<host>:<MCP_HTTP_PORT>` with `Authorization: Bearer 
 ## Available Tools
 
 Each tool exposes an MCP `annotations` block:
-
 - **Read tools** carry `readOnlyHint: true` — they only fetch state from Bugsink and never mutate it.
 - **Write tools** carry `destructiveHint: true` — they create/update records in your Bugsink instance.
 
 ### Connection
 
-#### `test_connection` *(read)*
+#### `test_connection` _(read)_
+
 Test connectivity to your Bugsink instance.
 
 ### Projects
 
-#### `list_projects` *(read)*
+#### `list_projects` _(read)_
+
 List all projects. Paginated.
 
 **Parameters:**
 - `cursor` (string, optional): Opaque cursor from a previous response's `Next cursor` or `Previous cursor`
 
-#### `get_project` *(read)*
+#### `get_project` _(read)_
+
 Get detailed information about a specific project including DSN.
 
 **Parameters:**
 - `project_id` (number, required): The project ID
 
-#### `create_project` *(write)*
+#### `create_project` _(write)_
+
 Create a new project in a team.
 
 **Parameters:**
@@ -180,7 +183,8 @@ Create a new project in a team.
 - `alert_on_regression` (boolean, optional, default `true`)
 - `alert_on_unmute` (boolean, optional, default `true`)
 
-#### `update_project` *(write)*
+#### `update_project` _(write)_
+
 Update an existing project's settings.
 
 **Parameters:**
@@ -194,20 +198,23 @@ Update an existing project's settings.
 
 ### Teams
 
-#### `list_teams` *(read)*
+#### `list_teams` _(read)_
+
 List all teams. Paginated.
 
 **Parameters:**
 - `cursor` (string, optional)
 
-#### `create_team` *(write)*
+#### `create_team` _(write)_
+
 Create a new team.
 
 **Parameters:**
 - `name` (string, required)
 - `visibility` (enum, optional): `joinable` | `discoverable` | `hidden` (default: `discoverable`)
 
-#### `update_team` *(write)*
+#### `update_team` _(write)_
+
 Update an existing team.
 
 **Parameters:**
@@ -217,7 +224,8 @@ Update an existing team.
 
 ### Issues
 
-#### `list_issues` *(read)*
+#### `list_issues` _(read)_
+
 List issues for a specific project. Paginated.
 
 **Parameters:**
@@ -228,26 +236,30 @@ List issues for a specific project. Paginated.
 - `order` (enum, optional): `asc` | `desc`
 - `cursor` (string, optional)
 
-#### `get_issue` *(read)*
+#### `get_issue` _(read)_
+
 Get detailed information about a specific issue.
 
 **Parameters:**
 - `issue_id` (string, required): The issue UUID or friendly ID
 
-#### `resolve_issue` *(write)*
+#### `resolve_issue` _(write)_
+
 Resolve an issue unconditionally, in the next release, or in the latest release.
 
 **Parameters:**
 - `issue_id` (string, required): The issue UUID or friendly ID
 - `mode` (enum, optional): `unconditionally` (default) | `next_release` | `latest_release`
 
-#### `reopen_issue` *(write)*
+#### `reopen_issue` _(write)_
+
 Reopen a previously resolved issue, returning it to unresolved state.
 
 **Parameters:**
 - `issue_id` (string, required): The issue UUID or friendly ID
 
-#### `mute_issue` *(write)*
+#### `mute_issue` _(write)_
+
 Mute an issue indefinitely, for a relative period (e.g. 3 days), or until an occurrence threshold is reached.
 
 **Parameters:**
@@ -257,27 +269,31 @@ Mute an issue indefinitely, for a relative period (e.g. 3 days), or until an occ
 - `nr_of_periods` (number, optional): Positive integer (e.g. 3)
 - `gte_threshold` (number, optional): Integer threshold for `until_threshold` mode
 
-#### `unmute_issue` *(write)*
+#### `unmute_issue` _(write)_
+
 Unmute a muted issue.
 
 **Parameters:**
 - `issue_id` (string, required): The issue UUID or friendly ID
 
-#### `comment_on_issue` *(write)*
+#### `comment_on_issue` _(write)_
+
 Add a diagnostic or team comment visible in Bugsink's issue history.
 
 **Parameters:**
 - `issue_id` (string, required): The issue UUID or friendly ID
 - `comment` (string, required): Comment text (1–4000 characters)
 
-#### `delete_issue` *(write)*
+#### `delete_issue` _(write)_
+
 Permanently delete an issue and all its events in Bugsink. Requires explicit safety confirmation.
 
 **Parameters:**
 - `issue_id` (string, required): The issue UUID or friendly ID
 - `confirm` (literal `true`, required): Must be set to `true` to execute deletion
 
-#### `analyze_issue_context` *(read)*
+#### `analyze_issue_context` _(read)_
+
 Holistic analysis tool — retrieves issue details, recent events, and the most recent full stacktrace in one call. Preferred when an LLM is investigating a single issue end-to-end.
 
 **Parameters:**
@@ -285,7 +301,8 @@ Holistic analysis tool — retrieves issue details, recent events, and the most 
 
 ### Events
 
-#### `list_events` *(read)*
+#### `list_events` _(read)_
+
 List events (individual error occurrences) for a specific issue. Paginated.
 
 **Parameters:**
@@ -293,7 +310,8 @@ List events (individual error occurrences) for a specific issue. Paginated.
 - `limit` (number, optional, default `10`)
 - `cursor` (string, optional)
 
-#### `get_event` *(read)*
+#### `get_event` _(read)_
+
 Get detailed event information. Supports targeted section retrieval and filtering out framework/vendor stack frames.
 
 **Parameters:**
@@ -303,13 +321,15 @@ Get detailed event information. Supports targeted section retrieval and filterin
 - `include_source` (boolean, optional, default `true`): Includes source code context lines
 - `max_chars` (number, optional, default `4000`): Maximum character limit for output text
 
-#### `get_stacktrace` *(read)*
+#### `get_stacktrace` _(read)_
+
 Get an event's stacktrace as Markdown. Uses the Bugsink-internal event ID (`id` field from `list_events`).
 
 **Parameters:**
 - `event_id` (string, required): The Bugsink-internal event ID
 
-#### `get_latest_event_stacktrace` *(read)*
+#### `get_latest_event_stacktrace` _(read)_
+
 Read the newest stored occurrence of an issue directly as a rendered Markdown stacktrace, saving agent roundtrips.
 
 **Parameters:**
@@ -318,20 +338,23 @@ Read the newest stored occurrence of an issue directly as a rendered Markdown st
 
 ### Releases
 
-#### `list_releases` *(read)*
+#### `list_releases` _(read)_
+
 List releases for a project. Paginated.
 
 **Parameters:**
 - `project_id` (number, required)
 - `cursor` (string, optional)
 
-#### `get_release` *(read)*
+#### `get_release` _(read)_
+
 Get detailed information about a specific release.
 
 **Parameters:**
 - `release_id` (string, required): The release UUID
 
-#### `create_release` *(write)*
+#### `create_release` _(write)_
+
 Create a new release for a project.
 
 **Parameters:**
@@ -342,7 +365,6 @@ Create a new release for a project.
 ## Example Usage
 
 Once configured, you can ask your AI assistant:
-
 - "List all projects in Bugsink"
 - "Show me the latest issues for project 1"
 - "What's the stacktrace for the latest event on issue #42?"
@@ -370,8 +392,18 @@ bun run build
 # Run automated tests
 bun test
 
-# Format
+# Typecheck with TypeScript
+bun run typecheck
+
+# Lint with Biome or Oxlint
+bun run lint
+bun run lint:oxlint
+
+# Format with Biome
 bun run format
+
+# Run full verification (typecheck + biome check)
+bun run check
 ```
 
 The `dist/index.js` binary doubles as the npm package entrypoint. After `bun run build` you can invoke it directly with `node dist/index.js` or `bun dist/index.js`.
@@ -390,14 +422,14 @@ MIT
 
 The original version of this server lives upstream at [`j-shelfwood/bugsink-mcp`](https://github.com/j-shelfwood/bugsink-mcp.git). This curated fork incorporates enhancements cherry-picked from [`razzaque/bugsink-mcp`](https://github.com/razzaque/bugsink-mcp.git), triage and access control capabilities from [`rexlManu/bugsink-mcp`](https://github.com/rexlManu/bugsink-mcp.git), direct Bugsink canonical mappings from [`draded/bugsink-mcp`](https://github.com/draded/bugsink-mcp.git), and ships them on top of j-shelfwood's base. Thanks to everyone who has contributed code, ideas, or reviews.
 
-| Contributor | Role | Highlights |
-|-------------|------|------------|
-| [Joris Schelfhout](https://github.com/j-shelfwood) (`joris@shelfwood.co`) | Original author | Initial release, mutation tools, API coverage (`v0.1.0` → `v0.2.0`) |
-| [jacobfrantz1](https://github.com/jacobfrantz1) | Pagination contributor | Filter-signature-aware cursors, spill cap raised to 5, ID disambiguation |
-| [Brian Razzaque](https://github.com/razzaque) (`razzaque@gmail.com`) | Transports + UX | Streamable-HTTP transport, Cloud Run–ready container, MCP tool annotations (`readOnlyHint` / `destructiveHint`), stacktrace workaround |
-| [Emmanuel Lampe](https://github.com/rexlManu) (`mail@emmanuel-lampe.de`) | Triage & Governance | Issue triage suite (resolve, reopen, mute, unmute, comment, delete), in-app stack frame filtering, project access controls (`BUGSINK_ALLOWED_PROJECTS`, `BUGSINK_READ_ONLY`) |
-| [Domagoj Rade](https://github.com/draded) (`dom@bitreport.app`) | API mapping contributor | Direct canonical Bugsink REST endpoint mapping reference |
-| [Animesh](https://github.com/anime-shed) (`animesh@flick2know.com`) | Fork maintainer | Curated integration of upstream enhancements, OpenAPI 3.0 schema alignment, test suite, documentation |
+| Contributor                                                               | Role                    | Highlights                                                                                                                                                                   |
+| ------------------------------------------------------------------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [Joris Schelfhout](https://github.com/j-shelfwood) (`joris@shelfwood.co`) | Original author         | Initial release, mutation tools, API coverage (`v0.1.0` → `v0.2.0`)                                                                                                          |
+| [jacobfrantz1](https://github.com/jacobfrantz1)                           | Pagination contributor  | Filter-signature-aware cursors, spill cap raised to 5, ID disambiguation                                                                                                     |
+| [Brian Razzaque](https://github.com/razzaque) (`razzaque@gmail.com`)      | Transports + UX         | Streamable-HTTP transport, Cloud Run–ready container, MCP tool annotations (`readOnlyHint` / `destructiveHint`), stacktrace workaround                                       |
+| [Emmanuel Lampe](https://github.com/rexlManu) (`mail@emmanuel-lampe.de`)  | Triage & Governance     | Issue triage suite (resolve, reopen, mute, unmute, comment, delete), in-app stack frame filtering, project access controls (`BUGSINK_ALLOWED_PROJECTS`, `BUGSINK_READ_ONLY`) |
+| [Domagoj Rade](https://github.com/draded) (`dom@bitreport.app`)           | API mapping contributor | Direct canonical Bugsink REST endpoint mapping reference                                                                                                                     |
+| [Animesh](https://github.com/anime-shed) (`animesh@flick2know.com`)       | Fork maintainer         | Curated integration of upstream enhancements, OpenAPI 3.0 schema alignment, test suite, documentation                                                                        |
 
 If you'd like to be listed here, open a PR — link it in the description and it'll be added on merge.
 

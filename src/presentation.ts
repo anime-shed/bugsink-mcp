@@ -121,13 +121,14 @@ export function extractEventExceptions(
   const values = event.data?.exception?.values;
   if (!Array.isArray(values)) return [];
 
-  return values.map((exc) => ({
-    type: exc.type,
-    value: exc.value,
-    ...((exc as Record<string, unknown>).module
-      ? { module: String((exc as Record<string, unknown>).module) }
-      : {}),
-  }));
+  return values.map((exc) => {
+    const raw = exc as unknown as Record<string, unknown>;
+    return {
+      type: exc.type,
+      value: exc.value,
+      ...(raw.module ? { module: String(raw.module) } : {}),
+    };
+  });
 }
 
 /**

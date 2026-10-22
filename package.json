@@ -9,9 +9,7 @@
   "bin": {
     "bugsink-mcp": "dist/index.js"
   },
-  "files": [
-    "dist"
-  ],
+  "files": ["dist"],
   "scripts": {
     "build": "esbuild src/index.ts --bundle --platform=node --format=esm --outfile=dist/index.js --packages=external",
     "watch": "esbuild src/index.ts --bundle --platform=node --format=esm --outfile=dist/index.js --packages=external --watch",
@@ -19,7 +17,12 @@
     "dev": "tsx src/index.ts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "format": "prettier --write src/",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check src/ tests/",
+    "lint:oxlint": "oxlint",
+    "lint:fix": "biome check --write src/ tests/",
+    "format": "biome format --write src/ tests/",
+    "check": "tsc --noEmit && biome check src/ tests/",
     "prepublishOnly": "npm run build"
   },
   "keywords": [
@@ -45,13 +48,13 @@
     "zod": "^3.25.0"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.6.2",
     "@types/node": "^22.0.0",
     "esbuild": "^0.25.0",
-    "prettier": "^3.0.0",
+    "oxlint": "^1.89.0",
     "tsx": "^4.0.0",
     "typescript": "^5.7.0",
-    "vitest": "^2.0.0",
-    "zod": "^3.25.0"
+    "vitest": "^2.0.0"
   },
   "engines": {
     "node": ">=18.0.0"

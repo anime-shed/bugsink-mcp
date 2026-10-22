@@ -1,13 +1,13 @@
-import { describe, it, expect, vi } from "vitest";
-import { BugsinkClient } from "../src/bugsink-client.js";
+import { describe, expect, it, vi } from 'vitest';
+import { BugsinkClient } from '../src/bugsink-client.js';
 
-describe("BugsinkClient Access Controls", () => {
-  it("rejects writes when readOnly is enabled", async () => {
+describe('BugsinkClient Access Controls', () => {
+  it('rejects writes when readOnly is enabled', async () => {
     const fetcher = vi.fn<typeof fetch>();
     const client = new BugsinkClient(
       {
-        baseUrl: "https://bugsink.test",
-        apiToken: "test-token",
+        baseUrl: 'https://bugsink.test',
+        apiToken: 'test-token',
         readOnly: true,
       },
       fetcher
@@ -15,34 +15,34 @@ describe("BugsinkClient Access Controls", () => {
 
     await expect(
       client.createProject({
-        team: "team-uuid",
-        name: "Forbidden Project",
+        team: 'team-uuid',
+        name: 'Forbidden Project',
       })
     ).rejects.toThrow(/Writes are disabled by BUGSINK_READ_ONLY/);
 
     expect(fetcher).not.toHaveBeenCalled();
   });
 
-  it("enforces allowedProjects on project retrieval and filtering", async () => {
+  it('enforces allowedProjects on project retrieval and filtering', async () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
       new Response(
         JSON.stringify({
           results: [
-            { id: 1, name: "Project 1", team: "t1" },
-            { id: 2, name: "Project 2", team: "t2" },
-            { id: 3, name: "Project 3", team: "t3" },
+            { id: 1, name: 'Project 1', team: 't1' },
+            { id: 2, name: 'Project 2', team: 't2' },
+            { id: 3, name: 'Project 3', team: 't3' },
           ],
           next: null,
           previous: null,
         }),
-        { status: 200, headers: { "Content-Type": "application/json" } }
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
       )
     );
 
     const client = new BugsinkClient(
       {
-        baseUrl: "https://bugsink.test",
-        apiToken: "test-token",
+        baseUrl: 'https://bugsink.test',
+        apiToken: 'test-token',
         allowedProjects: [2],
       },
       fetcher
@@ -59,21 +59,21 @@ describe("BugsinkClient Access Controls", () => {
 
     // getProject for allowed project should succeed
     fetcher.mockResolvedValueOnce(
-      new Response(
-        JSON.stringify({ id: 2, name: "Project 2", team: "t2" }),
-        { status: 200, headers: { "Content-Type": "application/json" } }
-      )
+      new Response(JSON.stringify({ id: 2, name: 'Project 2', team: 't2' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
     );
     const proj2 = await client.getProject(2);
     expect(proj2.id).toBe(2);
   });
 
-  it("enforces allowedProjects when querying issues for a project", async () => {
+  it('enforces allowedProjects when querying issues for a project', async () => {
     const fetcher = vi.fn<typeof fetch>();
     const client = new BugsinkClient(
       {
-        baseUrl: "https://bugsink.test",
-        apiToken: "test-token",
+        baseUrl: 'https://bugsink.test',
+        apiToken: 'test-token',
         allowedProjects: [5],
       },
       fetcher
