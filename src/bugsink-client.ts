@@ -157,6 +157,21 @@ export interface CreateReleaseInput {
   timestamp?: string;
 }
 
+export interface MuteIssueOptions {
+  period_name?: 'minute' | 'hour' | 'day' | 'week' | 'month' | 'year';
+  nr_of_periods?: number;
+  gte_threshold?: number;
+}
+
+export interface IssueCommentResult {
+  id: number;
+  issue: string;
+  project: number;
+  timestamp: string;
+  comment: string;
+  user?: number;
+}
+
 // ============================================================================
 // Composite cursor — bridges Bugsink's server-page cursor with client-side
 // `limit` slicing so that paginating with a small limit doesn't silently skip
@@ -402,6 +417,10 @@ export class BugsinkClient {
       throw new Error(`Bugsink API error (${response.status}): ${errorText}`);
     }
 
+    if (response.status === 204) {
+      return null as T;
+    }
+
     return response.json() as Promise<T>;
   }
 
@@ -494,7 +513,11 @@ export class BugsinkClient {
    * Get a specific issue by ID
    */
   async getIssue(issueId: string): Promise<Issue> {
-    return this.fetch<Issue>(`/issues/${issueId}/`);
+    const issue = await this.fetch<Issue>(`/issues/${issueId}/`);
+    if (this.allowedProjects && issue && issue.project !== undefined) {
+      this.requireProject(issue.project);
+    }
+    return issue;
   }
 
   /**
@@ -509,6 +532,9 @@ export class BugsinkClient {
     limit?: number;
     cursor?: string;
   }): Promise<PaginatedResponse<Event>> {
+    if (this.allowedProjects) {
+      await this.getIssue(issueId);
+    }
     const limit = options?.limit ?? 10;
 
     const fetchServerPage = (serverCursor: string | null) => {
@@ -525,7 +551,115 @@ export class BugsinkClient {
    * Get a specific event by ID
    */
   async getEvent(eventId: string): Promise<Event> {
-    return this.fetch<Event>(`/events/${eventId}/`);
+    const event = await this.fetch<Event>(`/events/${eventId}/`);
+    if (this.allowedProjects && event && event.project !== undefined) {
+      this.requireProject(event.project);
+    }
+    return event;
+  }
+
+  /**
+   * Helper to verify an issue belongs to an allowed project before triage mutation.
+   */
+  private async checkIssueProject(issueId: string): Promise<Issue> {
+    const issue = await this.getIssue(issueId);
+    this.requireProject(issue.project);
+    return issue;
+  }
+
+  /**
+   * Resolve an issue unconditionally, in the next release, or in the latest release.
+   */
+  async resolveIssue(
+    issueId: string,
+    mode: 'unconditionally' | 'next_release' | 'latest_release' = 'unconditionally'
+  ): Promise<Issue> {
+    if (this.allowedProjects) {
+      await this.checkIssueProject(issueId);
+    }
+    const endpoint = mode === 'next_release'
+      ? `/issues/${issueId}/resolve-next/`
+      : mode === 'latest_release'
+        ? `/issues/${issueId}/resolve-latest/`
+        : `/issues/${issueId}/resolve/`;
+
+    return this.fetch<Issue>(endpoint, { method: 'POST' });
+  }
+
+  /**
+   * Reopen a resolved issue.
+   */
+  async reopenIssue(issueId: string): Promise<Issue> {
+    if (this.allowedProjects) {
+      await this.checkIssueProject(issueId);
+    }
+    return this.fetch<Issue>(`/issues/${issueId}/reopen/`, { method: 'POST' });
+  }
+
+  /**
+   * Mute an issue indefinitely, for a period, or until an occurrence threshold is reached.
+   */
+  async muteIssue(issueId: string, options?: MuteIssueOptions): Promise<Issue> {
+    if (this.allowedProjects) {
+      await this.checkIssueProject(issueId);
+    }
+
+    if (options?.gte_threshold !== undefined && options?.period_name && options?.nr_of_periods) {
+      return this.fetch<Issue>(`/issues/${issueId}/mute-until/`, {
+        method: 'POST',
+        body: JSON.stringify({
+          period_name: options.period_name,
+          nr_of_periods: options.nr_of_periods,
+          gte_threshold: options.gte_threshold,
+        }),
+      });
+    }
+
+    if (options?.period_name && options?.nr_of_periods) {
+      return this.fetch<Issue>(`/issues/${issueId}/mute-for/`, {
+        method: 'POST',
+        body: JSON.stringify({
+          period_name: options.period_name,
+          nr_of_periods: options.nr_of_periods,
+        }),
+      });
+    }
+
+    return this.fetch<Issue>(`/issues/${issueId}/mute/`, { method: 'POST' });
+  }
+
+  /**
+   * Unmute an issue.
+   */
+  async unmuteIssue(issueId: string): Promise<Issue> {
+    if (this.allowedProjects) {
+      await this.checkIssueProject(issueId);
+    }
+    return this.fetch<Issue>(`/issues/${issueId}/unmute/`, { method: 'POST' });
+  }
+
+  /**
+   * Add a comment to an issue.
+   */
+  async commentOnIssue(issueId: string, comment: string): Promise<IssueCommentResult> {
+    if (this.allowedProjects) {
+      await this.checkIssueProject(issueId);
+    }
+    return this.fetch<IssueCommentResult>('/issue-comments/', {
+      method: 'POST',
+      body: JSON.stringify({ issue: issueId, comment }),
+    });
+  }
+
+  /**
+   * Delete an issue permanently.
+   */
+  async deleteIssue(issueId: string): Promise<{ deleted: boolean; issue_id: string }> {
+    if (this.allowedProjects) {
+      await this.checkIssueProject(issueId);
+    }
+    await this.fetch<void>(`/issues/${issueId}/`, { method: 'DELETE' });
+    return { deleted: true, issue_id: issueId };
   }
 
   /**
